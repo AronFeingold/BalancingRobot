@@ -1,5 +1,6 @@
-#include <Wire.h>                                            //Include the Wire.h library so we can communicate with the gyro
+#include <Wire.h>                                            //Needed so we can communicate with the gyro
 
+//Pin mappings
 #define PINLSTEP 5
 #define PINLDIR 4
 #define PINRSTEP 7
@@ -11,8 +12,9 @@
 #define LED_Fallen 9
 #define LED_Late 11
 
-#define ILIMIT 400
+#define ILIMIT 400  //The limit of the I-memory variable
 
+//Gyro variables
 int gyro_address = 0x68;                                     //MPU-6050 I2C address (0x68 or 0x69)
 int acc_calibration_value = -400;                            //Enter the accelerometer calibration value
 
@@ -418,8 +420,9 @@ void loop() //Runs at 4mS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Interrupt routine  TIMER2_COMPA_vect
+//This function runs ever 20us, ie 50kHz
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-ISR(TIMER2_COMPA_vect)  //this function runs ever 20us, ie 50kHz
+ISR(TIMER2_COMPA_vect)  
 {
   //Left motor pulse calculations
   throttle_counter_left_motor ++;                                           //Increase the throttle_counter_left_motor variable by 1 every time this routine is executed
