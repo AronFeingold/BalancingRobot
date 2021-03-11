@@ -1,6 +1,6 @@
-#include <Wire.h>                                            //Needed so we can communicate with the gyro
+#include <Wire.h>                                            //Include the Wire.h library so we can communicate with the gyro
+#include <RXInterrupt.h>
 
-//Pin mappings
 #define PINLSTEP 5
 #define PINLDIR 4
 #define PINRSTEP 7
@@ -12,9 +12,8 @@
 #define LED_Fallen 9
 #define LED_Late 11
 
-#define ILIMIT 400  //The limit of the I-memory variable
+#define ILIMIT 400
 
-//Gyro variables
 int gyro_address = 0x68;                                     //MPU-6050 I2C address (0x68 or 0x69)
 int acc_calibration_value = -400;                            //Enter the accelerometer calibration value
 
@@ -50,6 +49,9 @@ float refVcc = 5;
 
 //Loop counter
 int loop_counter = 0;
+
+// RC receiver output
+short RCOutput[2];
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Setup function
@@ -105,6 +107,10 @@ void setup()
   pinMode(LED_LowVoltage, OUTPUT);
   pinMode(ENABLE_MOTORS, OUTPUT);
 
+  // interupts only on digital pins 2 & 3
+  int pins[2] = {2, 3};
+  initChannels(pins, 2);
+
   //Test LEDs
   digitalWrite(LED_Fallen, HIGH);
   digitalWrite(LED_Late, HIGH);
@@ -151,6 +157,13 @@ void setup()
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void loop() //Runs at 4mS
 {
+
+  updateChannels(RCOutput, 2);
+
+  float FB = (float)(map(RCOutput[0], 1000, 2000, -200, 200)) / 1000;
+  float LR = map(RCOutput[1], 1000, 2000, -70, 70);
+
+
   //Read input command from serial port
   if (Serial.available())
   {
@@ -303,6 +316,15 @@ void loop() //Runs at 4mS
     right_motor_speed += turning_speed;                                      //Increase the right motor speed
   }
 
+  if (LR > 5 || LR < -5)
+  {
+    left_motor_speed -= LR;
+    right_motor_speed += LR;
+  }
+
+
+
+
   if (received_byte == 'F')
   {
     if (pid_setpoint > -2.5)
@@ -317,6 +339,24 @@ void loop() //Runs at 4mS
     if (pid_output < max_target_speed)
       pid_setpoint += 0.005;                //Slowly change the setpoint angle so the robot starts leaning backwards
   }
+
+
+  if (FB > 0.01)
+  {
+    if (pid_setpoint > -2.5)
+      pid_setpoint -= 0.1;                         //Slowly change the setpoint angle so the robot starts leaning forwards
+    if (pid_output > max_target_speed * -1)
+      pid_setpoint -= 0.005;           //Slowly change the setpoint angle so the robot starts leaning forwards
+  }
+
+  if (FB < -0.01)
+  {
+    if (pid_setpoint < 2.5)
+      pid_setpoint += 0.1;                          //Slowly change the setpoint angle so the robot starts leaning backwards
+    if (pid_output < max_target_speed)
+      pid_setpoint += 0.005;                //Slowly change the setpoint angle so the robot starts leaning backwards
+  }
+
 
   /*
     if (!(received_byte == 'F' || received_byte == 'B')) //Slowly reduce the setpoint to zero if no foreward or backward command is given
@@ -391,6 +431,10 @@ void loop() //Runs at 4mS
     Serial.print(pid_i_mem);
     Serial.print("\tPID o/p:");
     Serial.print(pid_output);
+    Serial.print("\tRC receiver output:");
+    Serial.print(LR);
+    Serial.print(" ");
+    Serial.print(FB);
 
     Serial.println();
 
@@ -420,9 +464,8 @@ void loop() //Runs at 4mS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Interrupt routine  TIMER2_COMPA_vect
-//This function runs ever 20us, ie 50kHz
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-ISR(TIMER2_COMPA_vect)  
+ISR(TIMER2_COMPA_vect)  //this function runs ever 20us, ie 50kHz
 {
   //Left motor pulse calculations
   throttle_counter_left_motor ++;                                           //Increase the throttle_counter_left_motor variable by 1 every time this routine is executed
