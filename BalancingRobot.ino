@@ -21,8 +21,8 @@ int acc_calibration_value = -400;                            //Enter the acceler
 float pid_p_gain = 15;                                       //Gain setting for the P-controller
 float pid_i_gain = 0.8;                                      //Gain setting for the I-controller
 float pid_d_gain = 25;                                       //Gain setting for the D-controller
-float turning_speed = 60;                                    //Turning speed
-float max_target_speed = 150;                                //Max target speed
+float max_target_speed = 250;                                //Max target speed
+float angle_returning_speed = 0.1;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Declaring global variables
@@ -164,24 +164,6 @@ void loop() //Runs at 4mS
   float LR = map(RCOutput[1], 1000, 2000, -70, 70);
 
 
-  //Read input command from serial port
-  if (Serial.available())
-  {
-    //If there is serial data available
-    received_byte = Serial.read();                                          //Load the received serial data in the received_byte variable
-    receive_counter = 0;                                                    //Reset the receive_counter variable
-    Serial.println((char)received_byte);
-  }
-
-  if (receive_counter <= 25)
-  {
-    receive_counter ++;                             //The received byte will be valid for 25 program loops (100 milliseconds)
-  }
-  else
-  {
-    received_byte = 0x00;                            //After 100 milliseconds the received byte is deleted
-  }
-
   //Check Lipo voltage
   int VoltageSensorValue = analogRead(A1);
   double LipoVoltage = (VoltageSensorValue * refVcc / 1023) * 3;  // x3 bec of voltage divider
@@ -262,13 +244,6 @@ void loop() //Runs at 4mS
 
   pid_i_mem += pid_i_gain * pid_error_temp;                                 //Calculate the I-controller value and add it to the pid_i_mem variable
 
-  //Handle max'ing out of the PID_I_mem
-  /*
-    if (pid_i_mem > ILIMIT)
-    pid_i_mem = ILIMIT;                                      //Limit the I-controller to the maximum controller output
-    else if (pid_i_mem < -ILIMIT)
-    pid_i_mem = -ILIMIT;
-  */
   if (abs(pid_i_mem) > ILIMIT)
     start = 0;
 
@@ -305,42 +280,22 @@ void loop() //Runs at 4mS
   left_motor_speed = pid_output;                                             //Copy the controller output to the left_motor_speed variable for the left motor
   right_motor_speed = pid_output;                                            //Copy the controller output to the right_motor_speed variable for the right motor
 
-  if (received_byte == 'L')
-  {
-    left_motor_speed += turning_speed;                                       //Increase the left motor speed
-    right_motor_speed -= turning_speed;                                      //Decrease the right motor speed
-  }
-  if (received_byte == 'R')
-  {
-    left_motor_speed -= turning_speed;                                       //Decrease the left motor speed
-    right_motor_speed += turning_speed;                                      //Increase the right motor speed
-  }
-
+  // Left and right code
   if (LR > 5 || LR < -5)
   {
-    left_motor_speed -= LR;
-    right_motor_speed += LR;
+    if (FB < 0)     // If it's is going backwards
+    {
+      left_motor_speed += LR;
+      right_motor_speed -= LR;
+    }
+    else            // If it's going forwards or is stationary
+    {
+      left_motor_speed -= LR;
+      right_motor_speed += LR;
+    }
   }
 
-
-
-
-  if (received_byte == 'F')
-  {
-    if (pid_setpoint > -2.5)
-      pid_setpoint -= /*0.05*/ 0.1;                           //Slowly change the setpoint angle so the robot starts leaning forwards
-    if (pid_output > max_target_speed * -1)
-      pid_setpoint -= 0.005;           //Slowly change the setpoint angle so the robot starts leaning forwards
-  }
-  if (received_byte == 'B')
-  {
-    if (pid_setpoint < 2.5)
-      pid_setpoint += /*0.05*/ 0.1;                            //Slowly change the setpoint angle so the robot starts leaning backwards
-    if (pid_output < max_target_speed)
-      pid_setpoint += 0.005;                //Slowly change the setpoint angle so the robot starts leaning backwards
-  }
-
-
+  // Forwards and backwards code
   if (FB > 0.01)
   {
     if (pid_setpoint > -2.5)
@@ -348,27 +303,22 @@ void loop() //Runs at 4mS
     if (pid_output > max_target_speed * -1)
       pid_setpoint -= 0.005;           //Slowly change the setpoint angle so the robot starts leaning forwards
   }
-
-  if (FB < -0.01)
+  else if (FB < -0.01)
   {
     if (pid_setpoint < 2.5)
       pid_setpoint += 0.1;                          //Slowly change the setpoint angle so the robot starts leaning backwards
     if (pid_output < max_target_speed)
       pid_setpoint += 0.005;                //Slowly change the setpoint angle so the robot starts leaning backwards
   }
-
-
-  /*
-    if (!(received_byte == 'F' || received_byte == 'B')) //Slowly reduce the setpoint to zero if no foreward or backward command is given
-    {
-      if (pid_setpoint > 0.5)
-        pid_setpoint -= 0.05;                            //If the PID setpoint is larger then 0.5 reduce the setpoint with 0.05 every loop
-      else if (pid_setpoint < -0.5)
-        pid_setpoint += 0.05;                      //If the PID setpoint is smaller then -0.5 increase the setpoint with 0.05 every loop
-      else
-        pid_setpoint = 0;                                                  //If the PID setpoint is smaller then 0.5 or larger then -0.5 set the setpoint to 0
-    }
-  */
+  else
+  {
+    if (pid_setpoint > 0.5)
+      pid_setpoint -= angle_returning_speed;                            //If the PID setpoint is larger then 0.5 reduce the setpoint with 0.05 every loop
+    else if (pid_setpoint < -0.5)
+      pid_setpoint += angle_returning_speed;                      //If the PID setpoint is smaller then -0.5 increase the setpoint with 0.05 every loop
+    else
+      pid_setpoint = 0;                                                  //If the PID setpoint is smaller then 0.5 or larger then -0.5 set the setpoint to 0
+  }
 
   //The self balancing point is adjusted when there is not forward or backwards movement from the transmitter. This way the robot will always find it's balancing point
   if (pid_setpoint == 0) //If the setpoint is zero degrees
@@ -415,11 +365,10 @@ void loop() //Runs at 4mS
     right_motor_speed = 0;
 
   //Copy the pulse time to the throttle variables so the interrupt subroutine can use them
-  //TODO? seems to be needed because otherwise the calib loop takes longer
   throttle_left_motor = left_motor_speed;
   throttle_right_motor = right_motor_speed;
 
-  if (loop_counter == 100)
+  if (loop_counter == -1)
   {
     Serial.print("  angle_gyro:");
     Serial.print(angle_gyro);
